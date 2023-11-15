@@ -121,9 +121,14 @@ impl Predictor {
     ///
     /// let predictor = Predictor::new(416, 416, 80, "models/yolox_nano.onnx").unwrap();
     /// let image = image::open("images/demo.jpg").unwrap().to_rgb8();
-    /// let bboxes = predictor.inference(&image);
+    /// let bboxes = predictor.inference(&image, 0.45, 0.1);
     /// ```
-    pub fn inference(&self, image: &RgbImage) -> anyhow::Result<Vec<BoundingBox>> {
+    pub fn inference(
+        &self,
+        image: &RgbImage,
+        nms_thr: f32,
+        score_thr: f32,
+    ) -> anyhow::Result<Vec<BoundingBox>> {
         let preprocess_result = self.preprocess(image)?;
 
         let result = self.model.run(tvec!(preprocess_result.tensor.into()))?;
@@ -131,7 +136,8 @@ impl Predictor {
             .get(0)
             .context("Inference output is empty.")?
             .to_array_view::<f32>()?;
-        let bboxes = self.postprocess(&output_array, preprocess_result.ratio)?;
+        let bboxes =
+            self.postprocess(&output_array, preprocess_result.ratio, nms_thr, score_thr)?;
 
         Ok(bboxes)
     }
@@ -175,10 +181,15 @@ impl Predictor {
     /// Convert model output to BoundingBox.
     ///
     /// Reference: https://github.com/Megvii-BaseDetection/YOLOX/blob/ac58e0a5e68e57454b7b9ac822aced493b553c53/yolox/utils/demo_utils.py#L139
+    ///
+    /// # Panics
+    /// Panics if output_array contains NaN.
     fn postprocess(
         &self,
         output_array: &ArrayViewD<f32>,
         ratio: f32,
+        nms_thr: f32,
+        score_thr: f32,
     ) -> anyhow::Result<Vec<BoundingBox>> {
         let mut bboxes = Vec::new();
 
@@ -213,19 +224,110 @@ impl Predictor {
                 .enumerate()
                 .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("output_array contains NaN"))
                 .context("num_classes is 0")?;
+            let score = obj_conf * class_conf;
 
-            let bbox = BoundingBox {
-                left: ((center_x - box_w / 2.0) / ratio) as u32,
-                top: ((center_y - box_h / 2.0) / ratio) as u32,
-                right: ((center_x + box_w / 2.0) / ratio) as u32,
-                bottom: ((center_y + box_h / 2.0) / ratio) as u32,
-                class: class_idx as u32,
-                score: obj_conf * class_conf,
-            };
+            if score <= score_thr {
+                continue;
+            }
+
+            let bbox = BoundingBox::new(
+                ((center_x - box_w / 2.0) / ratio) as u32,
+                ((center_y - box_h / 2.0) / ratio) as u32,
+                ((center_x + box_w / 2.0) / ratio) as u32,
+                ((center_y + box_h / 2.0) / ratio) as u32,
+                class_idx as u32,
+                score,
+            )?;
             bboxes.push(bbox);
         }
 
-        Ok(bboxes)
+        let keep_bboxes = self.multiclass_nms_class_agnostic(&mut bboxes, nms_thr)?;
+        Ok(keep_bboxes)
+    }
+
+    /// Multiclass NMS(Non-Maximum Suppression). Class-agnostic version.
+    ///
+    /// side effect: bboxes are emptied.
+    ///
+    /// # Panics
+    /// Panics if bboxes.score contains NaN.
+    fn multiclass_nms_class_agnostic(
+        &self,
+        bboxes: &mut Vec<BoundingBox>,
+        nms_thr: f32,
+    ) -> anyhow::Result<Vec<BoundingBox>> {
+        bboxes.sort_by(|a, b| {
+            a.score
+                .partial_cmp(&b.score)
+                .expect("bboxes.score contains NaN")
+        });
+
+        let mut keep_bboxes = Vec::new();
+        loop {
+            let bbox = match bboxes.pop() {
+                Some(bbox) => bbox,
+                None => break,
+            };
+            let mut keep = true;
+            for keep_bbox in &keep_bboxes {
+                if bbox.iou(keep_bbox)? > nms_thr {
+                    keep = false;
+                    break;
+                }
+            }
+            if keep {
+                keep_bboxes.push(bbox);
+            }
+        }
+        Ok(keep_bboxes)
+    }
+}
+
+impl BoundingBox {
+    fn new(
+        left: u32,
+        top: u32,
+        right: u32,
+        bottom: u32,
+        class: u32,
+        score: f32,
+    ) -> anyhow::Result<BoundingBox> {
+        let bbox = BoundingBox {
+            left,
+            top,
+            right,
+            bottom,
+            class,
+            score,
+        };
+        bbox.check()?;
+        Ok(bbox)
+    }
+
+    /// Checks if the bounding box is valid.
+    fn check(&self) -> anyhow::Result<()> {
+        if self.left >= self.right {
+            anyhow::bail!("left must be less than right.");
+        }
+        if self.top >= self.bottom {
+            anyhow::bail!("top must be less than bottom.");
+        }
+        Ok(())
+    }
+
+    /// Returns the intersection over union (IoU) of two bounding boxes.
+    fn iou(&self, other: &BoundingBox) -> anyhow::Result<f32> {
+        self.check()?;
+        other.check()?;
+
+        let area1 = (self.right as f32 - self.left as f32) * (self.bottom as f32 - self.top as f32);
+        let area2 =
+            (other.right as f32 - other.left as f32) * (other.bottom as f32 - other.top as f32);
+        let intersection_area =
+            (self.right.min(other.right) as f32 - self.left.max(other.left) as f32).max(0.0)
+                * (self.bottom.min(other.bottom) as f32 - self.top.max(other.top) as f32).max(0.0);
+
+        Ok(intersection_area / (area1 + area2 - intersection_area))
     }
 }
 
@@ -267,9 +369,11 @@ mod tests {
         let num_classes = 80;
         let model_path = "models/yolox_nano.onnx";
         let predictor = Predictor::new(width, height, num_classes, model_path).unwrap();
+        let nms_thr = 0.45;
+        let score_thr = 0.1;
 
         let image = image::open("images/demo.jpg").unwrap().to_rgb8();
-        let bboxes = predictor.inference(&image);
+        let bboxes = predictor.inference(&image, nms_thr, score_thr);
         assert!(bboxes.is_ok());
     }
 }
