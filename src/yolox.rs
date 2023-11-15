@@ -32,7 +32,7 @@ struct PreProcessResult {
 }
 
 impl Predictor {
-    /// Creates a new `PersonCounter`.
+    /// Creates a new `Predictor`.
     ///
     /// # Examples
     ///
@@ -43,7 +43,7 @@ impl Predictor {
     /// let height = 416;
     /// let num_classes = 80;
     /// let model_path = "models/yolox_nano.onnx";
-    /// let person_counter = Predictor::new(width, height, num_classes, model_path).unwrap();
+    /// let predictor = Predictor::new(width, height, num_classes, model_path).unwrap();
     /// ```
     pub fn new<P: AsRef<Path>>(
         width: u32,
@@ -119,9 +119,9 @@ impl Predictor {
     /// ```
     /// use yolox_rust::yolox::Predictor;
     ///
-    /// let person_counter = Predictor::new(416, 416, 80, "models/yolox_nano.onnx").unwrap();
+    /// let predictor = Predictor::new(416, 416, 80, "models/yolox_nano.onnx").unwrap();
     /// let image = image::open("images/demo.jpg").unwrap().to_rgb8();
-    /// let bboxes = person_counter.inference(&image);
+    /// let bboxes = predictor.inference(&image);
     /// ```
     pub fn inference(&self, image: &RgbImage) -> anyhow::Result<Vec<BoundingBox>> {
         let preprocess_result = self.preprocess(image)?;
