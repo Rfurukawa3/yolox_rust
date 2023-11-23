@@ -1,3 +1,4 @@
+use crate::bbox::BoundingBox;
 use anyhow::{self, Context};
 use image::{imageops, RgbImage};
 use std::path::Path;
@@ -14,16 +15,6 @@ pub struct Predictor {
     grids: Vec<[u32; 2]>,
     expanded_strides: Vec<u32>,
     model: RunnableModel<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct BoundingBox {
-    left: u32,
-    top: u32,
-    right: u32,
-    bottom: u32,
-    class: u32,
-    score: f32,
 }
 
 struct PreProcessResult {
@@ -241,7 +232,7 @@ impl Predictor {
             bboxes.push(bbox);
         }
 
-        let keep_bboxes = self.multiclass_nms_class_agnostic(&mut bboxes, nms_thr)?;
+        let keep_bboxes = self.multiclass_nms_class_agnostic(&mut bboxes, nms_thr);
         Ok(keep_bboxes)
     }
 
@@ -255,10 +246,10 @@ impl Predictor {
         &self,
         bboxes: &mut Vec<BoundingBox>,
         nms_thr: f32,
-    ) -> anyhow::Result<Vec<BoundingBox>> {
+    ) -> Vec<BoundingBox> {
         bboxes.sort_by(|a, b| {
-            a.score
-                .partial_cmp(&b.score)
+            a.score()
+                .partial_cmp(&b.score())
                 .expect("bboxes.score contains NaN")
         });
 
@@ -270,7 +261,7 @@ impl Predictor {
             };
             let mut keep = true;
             for keep_bbox in &keep_bboxes {
-                if bbox.iou(keep_bbox)? > nms_thr {
+                if bbox.iou(keep_bbox) > nms_thr {
                     keep = false;
                     break;
                 }
@@ -279,55 +270,7 @@ impl Predictor {
                 keep_bboxes.push(bbox);
             }
         }
-        Ok(keep_bboxes)
-    }
-}
-
-impl BoundingBox {
-    fn new(
-        left: u32,
-        top: u32,
-        right: u32,
-        bottom: u32,
-        class: u32,
-        score: f32,
-    ) -> anyhow::Result<BoundingBox> {
-        let bbox = BoundingBox {
-            left,
-            top,
-            right,
-            bottom,
-            class,
-            score,
-        };
-        bbox.check()?;
-        Ok(bbox)
-    }
-
-    /// Checks if the bounding box is valid.
-    fn check(&self) -> anyhow::Result<()> {
-        if self.left >= self.right {
-            anyhow::bail!("left must be less than right.");
-        }
-        if self.top >= self.bottom {
-            anyhow::bail!("top must be less than bottom.");
-        }
-        Ok(())
-    }
-
-    /// Returns the intersection over union (IoU) of two bounding boxes.
-    fn iou(&self, other: &BoundingBox) -> anyhow::Result<f32> {
-        self.check()?;
-        other.check()?;
-
-        let area1 = (self.right as f32 - self.left as f32) * (self.bottom as f32 - self.top as f32);
-        let area2 =
-            (other.right as f32 - other.left as f32) * (other.bottom as f32 - other.top as f32);
-        let intersection_area =
-            (self.right.min(other.right) as f32 - self.left.max(other.left) as f32).max(0.0)
-                * (self.bottom.min(other.bottom) as f32 - self.top.max(other.top) as f32).max(0.0);
-
-        Ok(intersection_area / (area1 + area2 - intersection_area))
+        keep_bboxes
     }
 }
 
