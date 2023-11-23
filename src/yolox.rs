@@ -33,7 +33,7 @@ impl Predictor {
     /// let width = 416;
     /// let height = 416;
     /// let num_classes = 80;
-    /// let model_path = "models/yolox_nano.onnx";
+    /// let model_path = "assets/models/yolox_nano.onnx";
     /// let predictor = Predictor::new(width, height, num_classes, model_path).unwrap();
     /// ```
     pub fn new<P: AsRef<Path>>(
@@ -110,8 +110,8 @@ impl Predictor {
     /// ```
     /// use yolox_rust::yolox::Predictor;
     ///
-    /// let predictor = Predictor::new(416, 416, 80, "models/yolox_nano.onnx").unwrap();
-    /// let image = image::open("images/demo.jpg").unwrap().to_rgb8();
+    /// let predictor = Predictor::new(416, 416, 80, "assets/models/yolox_nano.onnx").unwrap();
+    /// let image = image::open("assets/images/demo.jpg").unwrap().to_rgb8();
     /// let bboxes = predictor.inference(&image, 0.45, 0.1);
     /// ```
     pub fn inference(
@@ -284,7 +284,7 @@ mod tests {
         let height = 416;
         let num_bboxes = 3549;
         let num_classes = 80;
-        let model_path = "models/yolox_nano.onnx";
+        let model_path = "assets/models/yolox_nano.onnx";
         let predictor = Predictor::new(width, height, num_classes, model_path);
         assert!(predictor.is_ok());
 
@@ -310,12 +310,12 @@ mod tests {
         let width = 416;
         let height = 416;
         let num_classes = 80;
-        let model_path = "models/yolox_nano.onnx";
+        let model_path = "assets/models/yolox_nano.onnx";
         let predictor = Predictor::new(width, height, num_classes, model_path).unwrap();
         let nms_thr = 0.45;
         let score_thr = 0.1;
 
-        let image = image::open("images/demo.jpg").unwrap().to_rgb8();
+        let image = image::open("assets/images/demo.jpg").unwrap().to_rgb8();
         let bboxes = predictor.inference(&image, nms_thr, score_thr);
         assert!(bboxes.is_ok());
     }
