@@ -11,7 +11,6 @@ pub struct Predictor {
     width: u32,
     height: u32,
     num_bboxes: u32,
-    num_classes: u32,
     grids: Vec<[u32; 2]>,
     expanded_strides: Vec<u32>,
     model: RunnableModel<TypedFact, Box<dyn TypedOp>, Graph<TypedFact, Box<dyn TypedOp>>>,
@@ -96,7 +95,6 @@ impl Predictor {
             width,
             height,
             num_bboxes,
-            num_classes,
             grids,
             expanded_strides,
             model,
@@ -292,7 +290,6 @@ mod tests {
         assert_eq!(predictor.width, width);
         assert_eq!(predictor.height, height);
         assert_eq!(predictor.num_bboxes, num_bboxes);
-        assert_eq!(predictor.num_classes, num_classes);
     }
 
     #[test]
