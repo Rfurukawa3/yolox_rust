@@ -1,106 +1,107 @@
+use anyhow::{self};
+use getopts::Options;
 use image::{self};
 use rusttype::{Font, Scale};
-use yolox_rust::visualize::draw;
+use std::{env, path, process};
+use yolox_rust::visualize::{draw, load_class_map};
 use yolox_rust::yolox::Predictor;
 
-fn main() {
-    let class_map: Vec<&str> = vec![
-        "person",
-        "bicycle",
-        "car",
-        "motorcycle",
-        "airplane",
-        "bus",
-        "train",
-        "truck",
-        "boat",
-        "traffic light",
-        "fire hydrant",
-        "stop sign",
-        "parking meter",
-        "bench",
-        "bird",
-        "cat",
-        "dog",
-        "horse",
-        "sheep",
-        "cow",
-        "elephant",
-        "bear",
-        "zebra",
-        "giraffe",
-        "backpack",
-        "umbrella",
-        "handbag",
-        "tie",
-        "suitcase",
-        "frisbee",
-        "skis",
-        "snowboard",
-        "sports ball",
-        "kite",
-        "baseball bat",
-        "baseball glove",
-        "skateboard",
-        "surfboard",
-        "tennis racket",
-        "bottle",
-        "wine glass",
-        "cup",
-        "fork",
-        "knife",
-        "spoon",
-        "bowl",
-        "banana",
-        "apple",
-        "sandwich",
-        "orange",
-        "broccoli",
-        "carrot",
-        "hot dog",
-        "pizza",
-        "donut",
-        "cake",
-        "chair",
-        "couch",
-        "potted plant",
-        "bed",
-        "dining table",
-        "toilet",
-        "tv",
-        "laptop",
-        "mouse",
-        "remote",
-        "keyboard",
-        "cell phone",
-        "microwave",
-        "oven",
-        "toaster",
-        "sink",
-        "refrigerator",
-        "book",
-        "clock",
-        "vase",
-        "scissors",
-        "teddy bear",
-        "hair drier",
-        "toothbrush",
-    ];
+struct Args {
+    inputs: Vec<String>,
+    model: String,
+    output: String,
+    width: u32,
+    height: u32,
+    nms_thr: f32,
+    score_thr: f32,
+    class_map: Vec<String>,
+}
 
-    let width = 416;
-    let height = 416;
-    let num_classes = class_map.len() as u32;
-    let model_path = "assets/models/yolox_nano.onnx";
-    let predictor = Predictor::new(width, height, num_classes, model_path).unwrap();
-    let nms_thr = 0.45;
-    let score_thr = 0.1;
+fn print_usage(program: &str, opts: &Options) {
+    let brief = format!("Usage: {} FILE [options]", program);
+    print!("{}", opts.usage(&brief));
+    process::exit(0);
+}
 
-    let image = image::open("assets/images/demo.jpg").unwrap().to_rgb8();
-    let bboxes = predictor.inference(&image, nms_thr, score_thr).unwrap();
+fn parse_args() -> anyhow::Result<Args> {
+    const MODEL: &str = "assets/models/yolox_nano.onnx";
+    const OUTPUT: &str = "assets/images";
+    const WIDTH: u32 = 416;
+    const HEIGHT: u32 = 416;
+    const NMS_THR: f32 = 0.45;
+    const SCORE_THR: f32 = 0.1;
+    const CLASS_MAP: &str = "assets/class_map/coco_classes.txt";
 
-    for bbox in &bboxes {
-        println!("{:?}", bbox);
+    let args: Vec<String> = env::args().collect();
+    let program = args[0].clone();
+
+    let mut opts = Options::new();
+    opts.optopt("m", "model", &format!("default: {MODEL}"), "FILE");
+    opts.optopt("o", "output", &format!("default: {OUTPUT}"), "DIR");
+    opts.optopt("", "width", &format!("default: {WIDTH}"), "INT");
+    opts.optopt("", "height", &format!("default: {HEIGHT}"), "INT");
+    opts.optopt("", "nms_thr", &format!("default: {NMS_THR}"), "FLOAT");
+    opts.optopt("", "score_thr", &format!("default: {SCORE_THR}"), "FLOAT");
+    opts.optopt("", "class_map", &format!("default: {CLASS_MAP}"), "FILE");
+    opts.optflag("h", "help", "print this help menu");
+
+    let matches = opts.parse(&args[1..])?;
+
+    if matches.opt_present("h") {
+        print_usage(&program, &opts);
     }
+
+    if matches.free.is_empty() {
+        print_usage(&program, &opts);
+    }
+
+    let model = match matches.opt_str("model") {
+        Some(s) => s,
+        None => MODEL.to_string(),
+    };
+    let output = match matches.opt_str("output") {
+        Some(s) => s,
+        None => OUTPUT.to_string(),
+    };
+    let width: u32 = match matches.opt_str("width") {
+        Some(s) => s.parse()?,
+        None => WIDTH,
+    };
+    let height: u32 = match matches.opt_str("height") {
+        Some(s) => s.parse()?,
+        None => HEIGHT,
+    };
+    let nms_thr: f32 = match matches.opt_str("nms_thr") {
+        Some(s) => s.parse()?,
+        None => NMS_THR,
+    };
+    let score_thr: f32 = match matches.opt_str("score_thr") {
+        Some(s) => s.parse()?,
+        None => SCORE_THR,
+    };
+    let class_map_path = match matches.opt_str("class_map") {
+        Some(s) => s,
+        None => CLASS_MAP.to_string(),
+    };
+    let class_map = load_class_map(class_map_path)?;
+
+    Ok(Args {
+        inputs: matches.free.clone(),
+        model,
+        output,
+        width,
+        height,
+        nms_thr,
+        score_thr,
+        class_map,
+    })
+}
+
+fn main() {
+    let args = parse_args().unwrap();
+
+    let num_classes = args.class_map.len() as u32;
+    let predictor = Predictor::new(args.width, args.height, num_classes, args.model).unwrap();
 
     let color = image::Rgb([255, 0, 0]);
     let text_scale = Scale::uniform(32.0);
@@ -108,8 +109,29 @@ fn main() {
         include_bytes!("../assets/fonts/dejavu-sans-ttf-2.37/ttf/DejaVuSans.ttf");
     let font: Font<'static> = Font::try_from_bytes(font_data).unwrap();
 
-    let visualized = draw(&image, &bboxes, &class_map, color, text_scale, &font).unwrap();
-    visualized
-        .save("assets/images/demo_visualized.jpg")
-        .unwrap();
+    for input in &args.inputs {
+        let image = image::open(input);
+        if image.is_err() {
+            eprintln!("failed to open: {}", input);
+            continue;
+        }
+        println!("input image: {}", input);
+        let image = image.unwrap().to_rgb8();
+        let bboxes = predictor
+            .inference(&image, args.nms_thr, args.score_thr)
+            .unwrap();
+
+        for bbox in &bboxes {
+            println!("{:?}", bbox);
+        }
+
+        let visualized = draw(&image, &bboxes, &args.class_map, color, text_scale, &font).unwrap();
+        let basename = path::Path::new(input)
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let output = format!("{}/{}_visualized.jpg", args.output, basename);
+        visualized.save(output).unwrap();
+    }
 }

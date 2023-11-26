@@ -4,6 +4,9 @@ use image::RgbImage;
 use imageproc::drawing::{draw_hollow_rect_mut, draw_text_mut};
 use imageproc::rect::Rect as ProcRect;
 use rusttype::{Font, Scale};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path::Path;
 
 /// Draws bounding boxes on an image.
 pub fn draw<T: AsRef<str>>(
@@ -41,6 +44,23 @@ pub fn draw<T: AsRef<str>>(
     }
 
     Ok(drawn)
+}
+
+/// Loads a class map from a file.
+/// The file should contain one class per line.
+pub fn load_class_map<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<String>> {
+    let file = File::open(path)?;
+    let buffered = BufReader::new(file);
+    let mut class_map = Vec::new();
+
+    for read in buffered.lines() {
+        let line = read?;
+        if line == "" {
+            continue;
+        }
+        class_map.push(line);
+    }
+    Ok(class_map)
 }
 
 #[cfg(test)]
