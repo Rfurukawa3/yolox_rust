@@ -2,6 +2,8 @@ use anyhow::{self};
 use getopts::Options;
 use image::{self};
 use rusttype::{Font, Scale};
+use std::fs::OpenOptions;
+use std::io::{stdin, Write};
 use std::{env, fs, path, process};
 use yolox_rust::visualize::{draw, load_class_map};
 use yolox_rust::yolox::Predictor;
@@ -109,6 +111,11 @@ fn main() {
         include_bytes!("../assets/fonts/dejavu-sans-ttf-2.37/ttf/DejaVuSans.ttf");
     let font: Font<'static> = Font::try_from_bytes(font_data).unwrap();
 
+    println!("My pid is {}", process::id());
+    println!("Please enter to start benchmark.");
+    let mut tmp = String::new();
+    stdin().read_line(&mut tmp).unwrap();
+
     for input in &args.inputs {
         // if input is a directory, process all images in the directory
         if let Ok(entries) = fs::read_dir(input) {
@@ -116,6 +123,17 @@ fn main() {
                 if let Ok(entry) = entry {
                     let entry_path = entry.path();
                     if let Ok(image) = image::open(&entry_path) {
+                        let mut file = OpenOptions::new()
+                            .append(true)
+                            .open("tmp/bench_result.csv")
+                            .unwrap();
+                        write!(
+                            file,
+                            "{},",
+                            entry_path.file_name().unwrap().to_str().unwrap()
+                        )
+                        .unwrap();
+
                         println!("input image: {}", entry_path.display());
                         let image = image.to_rgb8();
                         let bboxes = predictor
@@ -141,6 +159,17 @@ fn main() {
         // if input is a file, process the file
         let entry_path = path::PathBuf::from(input);
         if let Ok(image) = image::open(&entry_path) {
+            let mut file = OpenOptions::new()
+                .append(true)
+                .open("tmp/bench_result.csv")
+                .unwrap();
+            write!(
+                file,
+                "{},",
+                entry_path.file_name().unwrap().to_str().unwrap()
+            )
+            .unwrap();
+
             println!("input image: {}", entry_path.display());
             let image = image.to_rgb8();
             let bboxes = predictor

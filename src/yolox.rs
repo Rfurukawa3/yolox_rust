@@ -1,7 +1,10 @@
 use crate::bbox::BoundingBox;
 use anyhow::{self, Context};
 use image::{imageops, RgbImage};
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::Path;
+use std::time;
 use tract_onnx::prelude::*;
 use tract_onnx::tract_core::ndarray::prelude::*;
 
@@ -118,15 +121,36 @@ impl Predictor {
         nms_thr: f32,
         score_thr: f32,
     ) -> anyhow::Result<Vec<BoundingBox>> {
+        let now_all = time::Instant::now();
+        let now = time::Instant::now();
         let preprocess_result = self.preprocess(image)?;
+        let preprocess_time = now.elapsed();
 
+        let now = time::Instant::now();
         let result = self.model.run(tvec!(preprocess_result.tensor.into()))?;
+        let inference_time = now.elapsed();
+
+        let now = time::Instant::now();
         let output_array = result
             .get(0)
             .context("Inference output is empty.")?
             .to_array_view::<f32>()?;
         let bboxes =
             self.postprocess(&output_array, preprocess_result.ratio, nms_thr, score_thr)?;
+        let postprocess_time = now.elapsed();
+        let all_time = now_all.elapsed();
+
+        let mut file = OpenOptions::new()
+            .append(true)
+            .open("tmp/bench_result.csv")?;
+        writeln!(
+            file,
+            "{},{},{},{},",
+            all_time.as_millis(),
+            preprocess_time.as_millis(),
+            inference_time.as_millis(),
+            postprocess_time.as_millis(),
+        )?;
 
         Ok(bboxes)
     }
