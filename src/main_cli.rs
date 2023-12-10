@@ -2,7 +2,7 @@ use anyhow::{self};
 use getopts::Options;
 use image::{self};
 use rusttype::{Font, Scale};
-use std::{env, path, process};
+use std::{env, fs, path, process};
 use yolox_rust::visualize::{draw, load_class_map};
 use yolox_rust::yolox::Predictor;
 
@@ -110,28 +110,55 @@ fn main() {
     let font: Font<'static> = Font::try_from_bytes(font_data).unwrap();
 
     for input in &args.inputs {
-        let image = image::open(input);
-        if image.is_err() {
-            eprintln!("failed to open: {}", input);
+        // if input is a directory, process all images in the directory
+        if let Ok(entries) = fs::read_dir(input) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    let entry_path = entry.path();
+                    if let Ok(image) = image::open(&entry_path) {
+                        println!("input image: {}", entry_path.display());
+                        let image = image.to_rgb8();
+                        let bboxes = predictor
+                            .inference(&image, args.nms_thr, args.score_thr)
+                            .unwrap();
+
+                        for bbox in &bboxes {
+                            println!("{:?}", bbox);
+                        }
+
+                        let visualized =
+                            draw(&image, &bboxes, &args.class_map, color, text_scale, &font)
+                                .unwrap();
+                        let basename = entry_path.file_stem().unwrap().to_str().unwrap();
+                        let output = format!("{}/{}_visualized.jpg", args.output, basename);
+                        visualized.save(output).unwrap();
+                    }
+                }
+            }
             continue;
         }
-        println!("input image: {}", input);
-        let image = image.unwrap().to_rgb8();
-        let bboxes = predictor
-            .inference(&image, args.nms_thr, args.score_thr)
-            .unwrap();
 
-        for bbox in &bboxes {
-            println!("{:?}", bbox);
+        // if input is a file, process the file
+        let entry_path = path::PathBuf::from(input);
+        if let Ok(image) = image::open(&entry_path) {
+            println!("input image: {}", entry_path.display());
+            let image = image.to_rgb8();
+            let bboxes = predictor
+                .inference(&image, args.nms_thr, args.score_thr)
+                .unwrap();
+
+            for bbox in &bboxes {
+                println!("{:?}", bbox);
+            }
+
+            let visualized =
+                draw(&image, &bboxes, &args.class_map, color, text_scale, &font).unwrap();
+            let basename = entry_path.file_stem().unwrap().to_str().unwrap();
+            let output = format!("{}/{}_visualized.jpg", args.output, basename);
+            visualized.save(output).unwrap();
+            continue;
         }
 
-        let visualized = draw(&image, &bboxes, &args.class_map, color, text_scale, &font).unwrap();
-        let basename = path::Path::new(input)
-            .file_stem()
-            .unwrap()
-            .to_str()
-            .unwrap();
-        let output = format!("{}/{}_visualized.jpg", args.output, basename);
-        visualized.save(output).unwrap();
+        eprintln!("failed : {}", input)
     }
 }
