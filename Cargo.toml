@@ -9,6 +9,10 @@ edition = "2021"
 name = "main_cli"
 path = "src/main_cli.rs"
 
+[[bench]]
+name = "benchmark"
+harness = false
+
 [dependencies]
 anyhow = { version = "1.0.75", features = ["backtrace", "std"] }
 getopts = "0.2.21"
@@ -16,3 +20,6 @@ image = "0.24.7"
 imageproc = "0.23.0"
 rusttype = "0.9.3"
 tract-onnx = "0.20.21"
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"] }
