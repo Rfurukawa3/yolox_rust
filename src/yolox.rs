@@ -146,10 +146,10 @@ impl Predictor {
         writeln!(
             file,
             "{},{},{},{},",
-            all_time.as_millis(),
-            preprocess_time.as_millis(),
-            inference_time.as_millis(),
-            postprocess_time.as_millis(),
+            all_time.as_micros(),
+            preprocess_time.as_micros(),
+            inference_time.as_micros(),
+            postprocess_time.as_micros(),
         )?;
 
         Ok(bboxes)
